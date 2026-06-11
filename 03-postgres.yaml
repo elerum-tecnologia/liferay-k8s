@@ -26,17 +26,17 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: liferay-secret
-                  key: MYSQL_DATABASE
+                  key: DATABASE
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
                   name: liferay-secret
-                  key: MYSQL_USER
+                  key: DB_USER
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: liferay-secret
-                  key: MYSQL_PASSWORD
+                  key: DB_PASSWORD
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
           volumeMounts:
