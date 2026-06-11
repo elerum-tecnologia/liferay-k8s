@@ -39,7 +39,7 @@ data:
       }
 
       upstream liferay {
-image: ${LIFERAY_IMAGE}
+        server liferay:8080;
         keepalive 32;
       }
 
