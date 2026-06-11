@@ -17,6 +17,18 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
+  name: liferay-es-config
+  namespace: liferay
+data:
+  com.liferay.portal.search.elasticsearch8.configuration.ElasticsearchConfiguration.config: |
+    productionModeEnabled=B"true"
+    networkHostAddresses=["http://liferay-elasticsearch:9200"]
+    authenticationEnabled=B"false"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
   name: nginx-config
   namespace: liferay
 data:
