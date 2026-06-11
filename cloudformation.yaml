@@ -1,0 +1,239 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Liferay DXP on Kubernetes (k3s) — implanta uma stack completa
+  (Liferay + PostgreSQL + Elasticsearch + nginx) em uma instância EC2.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# METADADOS — organiza parâmetros no console da AWS
+# ─────────────────────────────────────────────────────────────────────────────
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: "Instância EC2" }
+        Parameters: [InstanceType, KeyName, AllowedHttpCidr, AllowedSshCidr]
+      - Label: { default: "Liferay" }
+        Parameters: [LiferayImage, JvmMemory, LicenseXml]
+      - Label: { default: "Banco de dados" }
+        Parameters: [DBPassword]
+      - Label: { default: "Registry privada (opcional)" }
+        Parameters: [RegistryServer, RegistryUser, RegistryPassword]
+      - Label: { default: "Storage" }
+        Parameters: [StorageType, S3Bucket]
+    ParameterLabels:
+      InstanceType:    { default: "Tipo de instância" }
+      KeyName:         { default: "Par de chaves SSH" }
+      AllowedHttpCidr: { default: "CIDR com acesso HTTP (porta 30080)" }
+      AllowedSshCidr:  { default: "CIDR com acesso SSH" }
+      LiferayImage:    { default: "Imagem Docker do Liferay" }
+      JvmMemory:       { default: "Memória máxima da JVM (ex: 4g)" }
+      LicenseXml:      { default: "Conteúdo XML da licença Liferay" }
+      DBPassword:      { default: "Senha do banco de dados" }
+      RegistryServer:  { default: "Servidor da registry (deixe vazio para Docker Hub)" }
+      RegistryUser:    { default: "Usuário da registry" }
+      RegistryPassword:{ default: "Senha da registry" }
+      StorageType:     { default: "Tipo de storage (pvc ou s3)" }
+      S3Bucket:        { default: "Nome do bucket S3 (somente se StorageType=s3)" }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PARÂMETROS
+# ─────────────────────────────────────────────────────────────────────────────
+Parameters:
+
+  InstanceType:
+    Type: String
+    Default: t3.xlarge
+    AllowedValues: [t3.xlarge, t3.2xlarge, m5.xlarge, m5.2xlarge, m6i.xlarge, m6i.2xlarge]
+    Description: "Mínimo recomendado: t3.xlarge (4 vCPU / 16 GB RAM)"
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: "Par de chaves para acesso SSH à instância"
+
+  AllowedHttpCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: "CIDR com permissão para acessar o Liferay (porta 30080)"
+
+  AllowedSshCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: "CIDR com permissão para SSH (porta 22)"
+
+  LiferayImage:
+    Type: String
+    Default: elupianhez/lug-liferay:2026.q2.2
+    Description: "Imagem Docker do Liferay. Use sua imagem customizada se necessário."
+
+  JvmMemory:
+    Type: String
+    Default: "4g"
+    AllowedValues: ["2g", "4g", "6g", "8g"]
+    Description: "Memória máxima alocada para a JVM do Liferay (-Xmx)"
+
+  LicenseXml:
+    Type: String
+    NoEcho: false
+    Description: "Conteúdo completo do arquivo activation-key.xml da licença Liferay"
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    Description: "Senha do PostgreSQL (mínimo 8 caracteres)"
+
+  RegistryServer:
+    Type: String
+    Default: ""
+    Description: "URL da registry privada. Deixe vazio para Docker Hub público."
+
+  RegistryUser:
+    Type: String
+    Default: ""
+    Description: "Usuário para autenticação na registry privada"
+
+  RegistryPassword:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: "Senha para autenticação na registry privada"
+
+  StorageType:
+    Type: String
+    Default: pvc
+    AllowedValues: [pvc, s3]
+    Description: "pvc = armazenamento local no EBS | s3 = Amazon S3"
+
+  S3Bucket:
+    Type: String
+    Default: ""
+    Description: "Nome do bucket S3 para armazenamento de documentos (somente se StorageType=s3)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MAPEAMENTO DE AMIs — Ubuntu 22.04 LTS por região
+# (Substitua pelo ID da sua AMI customizada ao publicar no Marketplace)
+# ─────────────────────────────────────────────────────────────────────────────
+Mappings:
+  AmiByRegion:
+    us-east-1:      { AMI: ami-0c7217cdde317cfec }  # Ubuntu 22.04 LTS
+    us-east-2:      { AMI: ami-05fb0b8c1424f266b }
+    us-west-1:      { AMI: ami-0ce2cb35386fc22e9 }
+    us-west-2:      { AMI: ami-008fe2fc65df48dac }
+    eu-west-1:      { AMI: ami-0905a3c97561e0b69 }
+    eu-central-1:   { AMI: ami-0faab6bdbac9486fb }
+    ap-southeast-1: { AMI: ami-078c1149d8ad719a7 }
+    ap-northeast-1: { AMI: ami-0d52744d6551d851e }
+    sa-east-1:      { AMI: ami-0af6e9042ea5a4e3e }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RECURSOS
+# ─────────────────────────────────────────────────────────────────────────────
+Resources:
+
+  # Security Group
+  LiferaySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Liferay DXP — acesso HTTP e SSH"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 30080
+          ToPort: 30080
+          CidrIp: !Ref AllowedHttpCidr
+          Description: "Liferay HTTP"
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AllowedSshCidr
+          Description: "SSH"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-sg"
+
+  # IAM Role (necessário se StorageType=s3)
+  LiferayInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LiferayS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:DeleteObject, s3:ListBucket]
+                Resource:
+                  - !Sub "arn:aws:s3:::${S3Bucket}"
+                  - !Sub "arn:aws:s3:::${S3Bucket}/*"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+  LiferayInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref LiferayInstanceRole]
+
+  # EC2 Instance
+  LiferayInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [AmiByRegion, !Ref "AWS::Region", AMI]
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      IamInstanceProfile: !Ref LiferayInstanceProfile
+      SecurityGroupIds: [!GetAtt LiferaySecurityGroup.GroupId]
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 60
+            VolumeType: gp3
+            DeleteOnTermination: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-liferay"
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash
+            set -euo pipefail
+            exec > /var/log/liferay-setup.log 2>&1
+
+            # Parâmetros do CloudFormation
+            export DB_PASSWORD='${DBPassword}'
+            export LIFERAY_IMAGE='${LiferayImage}'
+            export REGISTRY_SERVER='${RegistryServer}'
+            export REGISTRY_USER='${RegistryUser}'
+            export REGISTRY_PASSWORD='${RegistryPassword}'
+            export STORAGE_TYPE='${StorageType}'
+            export S3_BUCKET='${S3Bucket}'
+            export JVM_MEMORY='${JvmMemory}'
+            export LICENSE_XML='${LicenseXmlEscaped}'
+
+            # Baixar e executar o script de bootstrap
+            curl -sf https://raw.githubusercontent.com/elerum-tecnologia/liferay-k8s/main/userdata.sh | bash
+          - LicenseXmlEscaped: !Ref LicenseXml
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OUTPUTS
+# ─────────────────────────────────────────────────────────────────────────────
+Outputs:
+
+  LiferayURL:
+    Description: "URL de acesso ao Liferay"
+    Value: !Sub "http://${LiferayInstance.PublicIp}:30080"
+
+  PublicIP:
+    Description: "IP público da instância EC2"
+    Value: !GetAtt LiferayInstance.PublicIp
+
+  SSHCommand:
+    Description: "Comando para conectar via SSH"
+    Value: !Sub "ssh -i <sua-chave>.pem ubuntu@${LiferayInstance.PublicIp}"
+
+  SetupLog:
+    Description: "Log de instalação (dentro da instância)"
+    Value: "sudo tail -f /var/log/liferay-setup.log"
