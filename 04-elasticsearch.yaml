@@ -53,7 +53,7 @@ spec:
 
       containers:
         - name: elasticsearch
-          image: ghcr.io/elerum-tecnologia/elerum-elasticsearch:1.0.0
+          image: elupianhez/lug-elasticsearch:8.19.13
           imagePullPolicy: IfNotPresent
           env:
             - name: ES_JAVA_OPTS
