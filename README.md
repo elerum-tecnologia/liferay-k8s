@@ -6,7 +6,7 @@ Stack completa de Liferay DXP no Kubernetes (k3s) para deploy automatizado via C
 
 | Arquivo | O que faz |
 |---------|-----------|
-| `00-namespace.yaml` | Namespace `lug` |
+| `00-namespace.yaml` | Namespace `liferay` |
 | `02-configmaps.yaml` | Configs do nginx e elasticsearch |
 | `03-postgres.yaml` | PostgreSQL 16 (StatefulSet) |
 | `04-elasticsearch.yaml` | Elasticsearch 8 (StatefulSet) |
