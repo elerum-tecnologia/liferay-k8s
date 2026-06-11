@@ -94,6 +94,9 @@ spec:
             - name: portal-ext
               mountPath: /opt/liferay/portal-ext.properties
               subPath: portal-ext.properties
+            - name: es-config
+              mountPath: /opt/liferay/osgi/configs/com.liferay.portal.search.elasticsearch8.configuration.ElasticsearchConfiguration.config
+              subPath: com.liferay.portal.search.elasticsearch8.configuration.ElasticsearchConfiguration.config
           resources:
             requests:
               cpu: "500m"
@@ -114,6 +117,9 @@ spec:
         - name: portal-ext
           configMap:
             name: liferay-portal-ext
+        - name: es-config
+          configMap:
+            name: liferay-es-config
 ---
 apiVersion: v1
 kind: Service
